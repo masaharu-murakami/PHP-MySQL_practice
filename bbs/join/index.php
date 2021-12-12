@@ -1,18 +1,18 @@
 <?php
 session_start();
+require('../library.php');
 
-
-$form = [
-    'name' => '',
-    'email' => '',
-    'password' => '',
-];
+if(isset($_GET['action']) && $_GET['action'] === 'rewrite' && isset($_SESSION['form'])) {
+    $form = $_SESSION['form'];
+} else {
+    $form = [
+        'name' => '',
+        'email' => '',
+        'password' => '',
+    ];
+}
 $error = [];
 
-/* htmlspecialcharsを短くする */
-function h($value) {
-    return htmlspecialchars($value, ENT_QUOTES);
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $form['name'] = filter_input(INPUT_POST, 'name', FILTER_SANITIZE_STRING);
@@ -23,6 +23,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $form['email'] = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
     if ($form['email'] === '') {
         $error['email'] = 'blank';
+    } else {
+        $db = dbconnect();
+        $stmt = $db->prepare('select count(*) from members where email=?');
+        if(!$stmt) {
+            die($db->error);
+        }
+        $stmt->bind_param('s', $form['email']);
+        $success = $stmt->execute();
+        if (!$success) {
+            die($db->error);
+        }
+
+        $stmt->bind_result($cnt);
+        $stmt->fetch();
+
+        if ($cut > 0) {
+            $error['email'] = 'duplicate';
+        }
+
     }
 
     $form['password'] = filter_input(INPUT_POST, 'password', FILTER_SANITIZE_STRING);
@@ -45,9 +64,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['form'] = $form;
 
         // 画像のアップロード
+        if ($image['name'] !== '') {
         $filename = date('YmdHis') . '_' . $image['name'];
-        move_uploaded_file($image['tmp_name'], '../member_picture/' . $filename);
+        if (!move_uploaded_file($image['tmp_name'], '../member_picture/' . $filename)) {
+            die('ファイルのアップロードに失敗しました');
+        }
+        $_SESSION['form']['image'] = $filename;
 
+    } else {
+        $_SESSION['form']['image'] = '';
+    }
         header('Location: check.php');
         exit();
     }
@@ -89,7 +115,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php if (isset($error['email']) && $error['email'] === 'blank'): ?>
                       <p class="error">* メールアドレスを入力してください</p>
                     <?php endif; ?>
+                    <?php if (isset($error['email']) && $error['email'] === 'duplicate'): ?>
                     <p class="error">* 指定されたメールアドレスはすでに登録されています</p>
+                    <?php endif; ?>
                 <dt>パスワード<span class="required">必須</span></dt>
                 <dd>
                     <input type="password" name="password" size="10" maxlength="20" value="<?php echo h($form['password']); ?>" />
